@@ -1,0 +1,2 @@
+# Stratus
+Friendly Resource Pooling
