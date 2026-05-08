@@ -1,0 +1,8 @@
+{
+  "controller_url": "http://CONTROLLER.tailnet:PORT",
+  "node_name": "YOUR_NAME",
+  "idle_threshold_s": 120,
+  "cpu_cap_active": 0.5,
+  "cpu_cap_idle": 2.0,
+  "heartbeat_secs": 15
+}
