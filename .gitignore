@@ -1,4 +1,8 @@
 .env
-agent.json
 agent
 agent.exe
+
+stratus
+stratus.exe
+agent.json
+.DS_Store
