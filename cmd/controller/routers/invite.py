@@ -10,6 +10,7 @@ from sqlalchemy import select
 from database import get_db
 from models import InviteToken
 from schemas import InviteCreateRequest, InviteResponse
+from auth import generate_agent_secret
 from datetime import datetime, timezone, timedelta
 
 router = APIRouter()
@@ -190,6 +191,7 @@ async def create_invite(
     agent_config = {
         "controller_url": body.controller_url,
         "node_name": body.node_name,
+        "agent_secret": generate_agent_secret(body.node_name),
         "idle_threshold_s": body.idle_threshold_s,
         "cpu_idle_threshold_pct": body.cpu_idle_threshold_pct,
         "cpu_cap_active": body.cpu_cap_active,

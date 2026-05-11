@@ -22,6 +22,11 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(
             "ADMIN_PASSWORD is too short (minimum 12 characters)."
         )
+    if not os.environ.get("SERVER_SECRET") or len(os.environ.get("SERVER_SECRET", "")) < 32:
+        raise RuntimeError(
+            "SERVER_SECRET is not set or too short (minimum 32 characters). "
+            "Generate one with: python3 -c \"import secrets; print(secrets.token_hex(32))\""
+        )
     if not os.environ.get("TAILSCALE_API_KEY"):
         log.warning("TAILSCALE_API_KEY is not set — invite provisioning will be unavailable.")
 

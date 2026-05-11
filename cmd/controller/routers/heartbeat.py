@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Depends, Request
+import logging
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database import get_db
 from models import Node
 from schemas import HeartbeatPayload
+from auth import verify_agent_secret
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 
 @router.post("/api/v1/heartbeat")
@@ -13,7 +16,11 @@ async def receive_heartbeat(
     payload: HeartbeatPayload,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    x_agent_secret: str = Header(default=""),
 ):
+    if not x_agent_secret or not verify_agent_secret(payload.node, x_agent_secret):
+        log.warning("[heartbeat] auth failure from %s (node=%s)", request.client, payload.node)
+        raise HTTPException(status_code=401, detail="Invalid agent secret.")
     tailscale_ip = request.client.host if request.client else None
 
     result = await db.execute(select(Node).where(Node.name == payload.node))

@@ -1,16 +1,26 @@
-from fastapi import APIRouter, Depends, Query
+import logging
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database import get_db
 from models import Event
 from schemas import EventPayload, EventResponse
+from auth import verify_agent_secret
 from typing import List, Optional
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 
 @router.post("/api/v1/events")
-async def receive_event(payload: EventPayload, db: AsyncSession = Depends(get_db)):
+async def receive_event(
+    payload: EventPayload,
+    db: AsyncSession = Depends(get_db),
+    x_agent_secret: str = Header(default=""),
+):
+    if not x_agent_secret or not verify_agent_secret(payload.node, x_agent_secret):
+        log.warning("[event] auth failure (node=%s)", payload.node)
+        raise HTTPException(status_code=401, detail="Invalid agent secret.")
     event = Event(node_name=payload.node, event=payload.event, ts=payload.ts)
     db.add(event)
     await db.commit()
