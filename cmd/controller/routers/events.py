@@ -5,8 +5,14 @@ from sqlalchemy import select
 from database import get_db
 from models import Event
 from schemas import EventPayload, EventResponse
-from auth import verify_agent_secret
+from auth import verify_agent_secret, verify_dashboard_token
 from typing import List, Optional
+
+
+def _require_dashboard_token(authorization: str = Header(default="")):
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token or not verify_dashboard_token(token):
+        raise HTTPException(status_code=401, detail="Unauthorized.")
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -28,7 +34,7 @@ async def receive_event(
     return {"status": "ok"}
 
 
-@router.get("/api/v1/events", response_model=List[EventResponse])
+@router.get("/api/v1/events", response_model=List[EventResponse], dependencies=[Depends(_require_dashboard_token)])
 async def list_events(
     node: Optional[str] = Query(default=None),
     limit: int = Query(default=100, le=500),

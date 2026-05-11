@@ -1,15 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from database import get_db
 from models import Node, Event
 from schemas import NodeResponse
+from auth import verify_dashboard_token, verify_admin_password
 from datetime import datetime, timezone, timedelta
 from typing import List
-import os
 
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+def _require_dashboard_token(authorization: str = Header(default="")):
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token or not verify_dashboard_token(token):
+        raise HTTPException(status_code=401, detail="Unauthorized.")
 
 router = APIRouter()
 
@@ -31,7 +35,7 @@ def _node_to_response(node: Node) -> NodeResponse:
     )
 
 
-@router.get("/api/v1/nodes", response_model=List[NodeResponse])
+@router.get("/api/v1/nodes", response_model=List[NodeResponse], dependencies=[Depends(_require_dashboard_token)])
 async def list_nodes(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Node).order_by(Node.name))
     return [_node_to_response(n) for n in result.scalars().all()]
@@ -43,7 +47,7 @@ class NodeDeleteRequest(BaseModel):
 
 @router.delete("/api/v1/nodes/{name}")
 async def delete_node(name: str, body: NodeDeleteRequest, db: AsyncSession = Depends(get_db)):
-    if not ADMIN_PASSWORD or body.admin_password != ADMIN_PASSWORD:
+    if not verify_admin_password(body.admin_password):
         raise HTTPException(status_code=401, detail="Invalid admin password.")
 
     result = await db.execute(select(Node).where(Node.name == name))

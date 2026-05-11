@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchNodes, Node } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { fetchNodes, logout, Node } from "@/lib/api";
 import NodeCard from "@/components/NodeCard";
 import InviteModal from "@/components/InviteModal";
 
 const REFRESH_INTERVAL = 15_000;
 
 export default function Dashboard() {
+  const router = useRouter();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +20,11 @@ export default function Dashboard() {
       const data = await fetchNodes();
       setNodes(data);
       setError(null);
-    } catch {
+    } catch (e) {
+      if (e instanceof Error && e.message === "UNAUTHORIZED") {
+        router.push("/login");
+        return;
+      }
       setError("Cannot reach controller — is it running?");
     } finally {
       setLoading(false);
@@ -44,12 +50,20 @@ export default function Dashboard() {
             </span>
           )}
         </div>
-        <button
-          onClick={() => setShowInvite(true)}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-        >
-          + Invite a Friend
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowInvite(true)}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            + Invite a Friend
+          </button>
+          <button
+            onClick={() => { logout(); router.push("/login"); }}
+            className="text-slate-400 hover:text-white text-sm px-3 py-2 rounded-lg transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
       </header>
 
       <main className="px-6 py-8 max-w-5xl mx-auto">

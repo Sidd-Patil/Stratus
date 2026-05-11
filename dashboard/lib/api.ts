@@ -36,8 +36,39 @@ export interface JoinData {
   message: string;
 }
 
+function getToken(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("dashboard_token") ?? "";
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { "Authorization": `Bearer ${token}` } : {};
+}
+
+export async function login(password: string): Promise<string> {
+  const res = await fetch(`${BASE}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (res.status === 401) throw new Error("Invalid password.");
+  if (!res.ok) throw new Error("Login failed.");
+  const data = await res.json();
+  localStorage.setItem("dashboard_token", data.token);
+  return data.token;
+}
+
+export function logout(): void {
+  localStorage.removeItem("dashboard_token");
+}
+
 export async function fetchNodes(): Promise<Node[]> {
-  const res = await fetch(`${BASE}/api/v1/nodes`, { cache: "no-store" });
+  const res = await fetch(`${BASE}/api/v1/nodes`, {
+    headers: authHeaders(),
+    cache: "no-store",
+  });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
   if (!res.ok) throw new Error("Failed to fetch nodes");
   return res.json();
 }
@@ -45,7 +76,7 @@ export async function fetchNodes(): Promise<Node[]> {
 export async function createInvite(body: InviteRequest): Promise<InviteResponse> {
   const res = await fetch(`${BASE}/api/v1/invites`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error("Failed to create invite");
@@ -55,7 +86,7 @@ export async function createInvite(body: InviteRequest): Promise<InviteResponse>
 export async function deleteNode(name: string, adminPassword: string): Promise<void> {
   const res = await fetch(`${BASE}/api/v1/nodes/${encodeURIComponent(name)}`, {
     method: "DELETE",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ admin_password: adminPassword }),
   });
   if (res.status === 401) throw new Error("Wrong admin password.");

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
-from routers import heartbeat, nodes, events, invite
+from routers import heartbeat, nodes, events, invite, login
 import uvicorn
 
 log = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ app.include_router(heartbeat.router)
 app.include_router(nodes.router)
 app.include_router(events.router)
 app.include_router(invite.router)
+app.include_router(login.router)
 
 
 if __name__ == "__main__":
