@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import secrets
 import httpx
@@ -12,6 +13,7 @@ from schemas import InviteCreateRequest, InviteResponse
 from datetime import datetime, timezone, timedelta
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 TOKEN_TTL = timedelta(days=7)
 
@@ -21,7 +23,7 @@ TAILSCALE_TAILNET = os.environ.get("TAILSCALE_TAILNET", "-")
 
 # Raw bash script template.
 # __TS_KEY__, __NODE_NAME__, __CONFIG_JSON__ are replaced server-side before serving.
-# All other $VARIABLES are bash runtime variables — they expand on the target machine.
+# All other $VARIABLES expand at runtime on the target machine.
 _INSTALL_SCRIPT = r"""#!/usr/bin/env bash
 set -euo pipefail
 
@@ -136,11 +138,13 @@ success "Done! '$NODE_NAME' will appear in the Stratus dashboard within 15 secon
 """
 
 
-async def _generate_tailscale_key() -> str:
+async def _mint_tailscale_key() -> str:
+    """Generate a one-time preauthorized Tailscale auth key via the Tailscale API.
+    The key is never stored — it is generated on demand and served once."""
     if not TAILSCALE_API_KEY:
         raise HTTPException(
             status_code=503,
-            detail="TAILSCALE_API_KEY is not configured on the controller.",
+            detail="Tailscale provisioning is not configured on this controller.",
         )
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -161,9 +165,11 @@ async def _generate_tailscale_key() -> str:
             timeout=10,
         )
     if resp.status_code != 200:
+        # Log the real error server-side; return a generic message to the client.
+        log.error("Tailscale API error %s: %s", resp.status_code, resp.text)
         raise HTTPException(
             status_code=502,
-            detail=f"Tailscale API error {resp.status_code}: {resp.text}",
+            detail="Failed to provision Tailscale key. Check controller logs.",
         )
     return resp.json()["key"]
 
@@ -177,11 +183,10 @@ async def create_invite(
     if not ADMIN_PASSWORD or body.admin_password != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Invalid admin password.")
 
-    ts_key = await _generate_tailscale_key()
-
     token = secrets.token_urlsafe(24)
     expires_at = datetime.now(timezone.utc) + TOKEN_TTL
 
+    # Tailscale key is NOT stored — it is minted fresh when the script is fetched.
     agent_config = {
         "controller_url": body.controller_url,
         "node_name": body.node_name,
@@ -190,7 +195,6 @@ async def create_invite(
         "cpu_cap_active": body.cpu_cap_active,
         "cpu_cap_idle": body.cpu_cap_idle,
         "heartbeat_secs": body.heartbeat_secs,
-        "tailscale_auth_key": ts_key,
     }
 
     invite = InviteToken(
@@ -213,36 +217,39 @@ async def create_invite(
 
 @router.get("/join/{token}/script", response_class=PlainTextResponse)
 async def get_install_script(token: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(InviteToken).where(InviteToken.token == token))
+    # Lock the row to prevent two simultaneous requests both getting a valid token.
+    result = await db.execute(
+        select(InviteToken).where(InviteToken.token == token).with_for_update()
+    )
     invite = result.scalar_one_or_none()
 
     if not invite:
         raise HTTPException(status_code=404, detail="Invite not found.")
+    if invite.used_at:
+        raise HTTPException(status_code=410, detail="Invite already used.")
     if invite.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         raise HTTPException(status_code=410, detail="Invite expired.")
 
-    ts_key = invite.agent_config.get("tailscale_auth_key", "")
-    node_name = invite.node_name
+    # Mint the Tailscale key now — generated fresh, served once, never persisted.
+    ts_key = await _mint_tailscale_key()
 
-    # Strip the Tailscale key from the config written to disk — it's single-use
-    # and serves no purpose after Tailscale is connected.
-    config_for_disk = {
-        k: v for k, v in invite.agent_config.items()
-        if k != "tailscale_auth_key"
-    }
-    config_json = json.dumps(config_for_disk, indent=2)
+    # Mark as used before returning so a second request cannot reuse the token.
+    invite.used_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    config_json = json.dumps(invite.agent_config, indent=2)
 
     script = (
         _INSTALL_SCRIPT
         .replace("__TS_KEY__", ts_key)
-        .replace("__NODE_NAME__", node_name)
+        .replace("__NODE_NAME__", invite.node_name)
         .replace("__CONFIG_JSON__", config_json)
     )
     return PlainTextResponse(content=script, media_type="text/x-shellscript")
 
 
 @router.get("/join/{token}")
-async def redeem_invite(token: str, db: AsyncSession = Depends(get_db)):
+async def get_invite_page_data(token: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(InviteToken).where(InviteToken.token == token))
     invite = result.scalar_one_or_none()
 
@@ -251,11 +258,7 @@ async def redeem_invite(token: str, db: AsyncSession = Depends(get_db)):
     if invite.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         raise HTTPException(status_code=410, detail="Invite expired.")
 
-    config_for_display = {
-        k: v for k, v in invite.agent_config.items()
-        if k != "tailscale_auth_key"
-    }
     return {
         "node_name": invite.node_name,
-        "agent_config": config_for_display,
+        "agent_config": invite.agent_config,
     }
