@@ -15,7 +15,9 @@ export interface Node {
 export interface InviteRequest {
   node_name: string;
   controller_url: string;
+  admin_password: string;
   idle_threshold_s?: number;
+  cpu_idle_threshold_pct?: number;
   cpu_cap_active?: number;
   cpu_cap_idle?: number;
   heartbeat_secs?: number;

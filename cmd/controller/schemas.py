@@ -47,7 +47,9 @@ class EventResponse(BaseModel):
 class InviteCreateRequest(BaseModel):
     node_name: str
     controller_url: str
+    admin_password: str
     idle_threshold_s: float = 120
+    cpu_idle_threshold_pct: float = 15.0
     cpu_cap_active: float = 0.5
     cpu_cap_idle: float = 2.0
     heartbeat_secs: int = 15

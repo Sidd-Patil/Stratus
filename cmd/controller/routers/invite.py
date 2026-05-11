@@ -1,5 +1,9 @@
+import json
+import os
 import secrets
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database import get_db
@@ -11,6 +15,158 @@ router = APIRouter()
 
 TOKEN_TTL = timedelta(days=7)
 
+ADMIN_PASSWORD    = os.environ.get("ADMIN_PASSWORD", "")
+TAILSCALE_API_KEY = os.environ.get("TAILSCALE_API_KEY", "")
+TAILSCALE_TAILNET = os.environ.get("TAILSCALE_TAILNET", "-")
+
+# Raw bash script template.
+# __TS_KEY__, __NODE_NAME__, __CONFIG_JSON__ are replaced server-side before serving.
+# All other $VARIABLES are bash runtime variables — they expand on the target machine.
+_INSTALL_SCRIPT = r"""#!/usr/bin/env bash
+set -euo pipefail
+
+RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
+log()     { echo -e "${BLUE}[stratus]${NC} $*"; }
+success() { echo -e "${GREEN}[stratus]${NC} $*"; }
+err()     { echo -e "${RED}[stratus]${NC} $*"; exit 1; }
+
+TS_AUTH_KEY="__TS_KEY__"
+NODE_NAME="__NODE_NAME__"
+GITHUB_REPO="Sidd-Patil/Stratus"
+INSTALL_DIR="/usr/local/bin"
+CONFIG_DIR="$HOME/.stratus"
+
+# ── Detect platform ───────────────────────────────────────────────────────────
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64)        ARCH="amd64" ;;
+  aarch64|arm64) ARCH="arm64" ;;
+  *) err "Unsupported architecture: $ARCH" ;;
+esac
+log "Platform: $OS/$ARCH"
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+if ! command -v docker &>/dev/null; then
+  if [ "$OS" = "linux" ]; then
+    log "Docker not found — installing..."
+    curl -fsSL https://get.docker.com | sh
+    sudo usermod -aG docker "$USER"
+    log "Docker installed. You may need to log out and back in for group permissions."
+  else
+    err "Docker not found. Install OrbStack (https://orbstack.dev) or Docker Desktop, then re-run this script."
+  fi
+else
+  log "Docker: $(docker --version)"
+fi
+
+# ── Tailscale ─────────────────────────────────────────────────────────────────
+if ! command -v tailscale &>/dev/null; then
+  if [ "$OS" = "linux" ]; then
+    log "Tailscale not found — installing..."
+    curl -fsSL https://tailscale.com/install.sh | sh
+  else
+    err "Tailscale not found. Install from https://tailscale.com/download, then re-run this script."
+  fi
+else
+  log "Tailscale: found"
+fi
+
+log "Connecting to Tailscale..."
+sudo tailscale up --authkey="$TS_AUTH_KEY" --accept-routes
+
+# ── Agent binary ──────────────────────────────────────────────────────────────
+BINARY_URL="https://github.com/$GITHUB_REPO/releases/latest/download/stratus-$OS-$ARCH"
+log "Downloading Stratus agent ($OS/$ARCH)..."
+sudo curl -fsSL "$BINARY_URL" -o "$INSTALL_DIR/stratus"
+sudo chmod +x "$INSTALL_DIR/stratus"
+
+# ── Config ────────────────────────────────────────────────────────────────────
+mkdir -p "$CONFIG_DIR"
+cat > "$CONFIG_DIR/agent.json" <<'STRATUS_CONFIG'
+__CONFIG_JSON__
+STRATUS_CONFIG
+
+# ── Service ───────────────────────────────────────────────────────────────────
+if [ "$OS" = "linux" ]; then
+  sudo tee /etc/systemd/system/stratus.service >/dev/null <<STRATUS_SERVICE
+[Unit]
+Description=Stratus Agent
+After=network-online.target docker.service tailscaled.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/stratus ${CONFIG_DIR}/agent.json
+Restart=on-failure
+RestartSec=5
+User=$USER
+
+[Install]
+WantedBy=multi-user.target
+STRATUS_SERVICE
+  sudo systemctl daemon-reload
+  sudo systemctl enable stratus
+  sudo systemctl start stratus
+
+else
+  PLIST="$HOME/Library/LaunchAgents/dev.stratus.agent.plist"
+  mkdir -p "$HOME/Library/LaunchAgents"
+  cat > "$PLIST" <<STRATUS_PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>dev.stratus.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/stratus</string>
+        <string>${CONFIG_DIR}/agent.json</string>
+    </array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>StandardOutPath</key><string>$HOME/Library/Logs/stratus.log</string>
+    <key>StandardErrorPath</key><string>$HOME/Library/Logs/stratus.log</string>
+</dict>
+</plist>
+STRATUS_PLIST
+  launchctl load "$PLIST"
+fi
+
+success "Done! '$NODE_NAME' will appear in the Stratus dashboard within 15 seconds."
+"""
+
+
+async def _generate_tailscale_key() -> str:
+    if not TAILSCALE_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="TAILSCALE_API_KEY is not configured on the controller.",
+        )
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"https://api.tailscale.com/api/v2/tailnet/{TAILSCALE_TAILNET}/keys",
+            headers={"Authorization": f"Bearer {TAILSCALE_API_KEY}"},
+            json={
+                "capabilities": {
+                    "devices": {
+                        "create": {
+                            "reusable": False,
+                            "ephemeral": False,
+                            "preauthorized": True,
+                        }
+                    }
+                },
+                "expirySeconds": int(TOKEN_TTL.total_seconds()),
+            },
+            timeout=10,
+        )
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Tailscale API error {resp.status_code}: {resp.text}",
+        )
+    return resp.json()["key"]
+
 
 @router.post("/api/v1/invites", response_model=InviteResponse)
 async def create_invite(
@@ -18,6 +174,11 @@ async def create_invite(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    if not ADMIN_PASSWORD or body.admin_password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid admin password.")
+
+    ts_key = await _generate_tailscale_key()
+
     token = secrets.token_urlsafe(24)
     expires_at = datetime.now(timezone.utc) + TOKEN_TTL
 
@@ -25,9 +186,11 @@ async def create_invite(
         "controller_url": body.controller_url,
         "node_name": body.node_name,
         "idle_threshold_s": body.idle_threshold_s,
+        "cpu_idle_threshold_pct": body.cpu_idle_threshold_pct,
         "cpu_cap_active": body.cpu_cap_active,
         "cpu_cap_idle": body.cpu_cap_idle,
         "heartbeat_secs": body.heartbeat_secs,
+        "tailscale_auth_key": ts_key,
     }
 
     invite = InviteToken(
@@ -48,24 +211,51 @@ async def create_invite(
     )
 
 
+@router.get("/join/{token}/script", response_class=PlainTextResponse)
+async def get_install_script(token: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(InviteToken).where(InviteToken.token == token))
+    invite = result.scalar_one_or_none()
+
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found.")
+    if invite.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="Invite expired.")
+
+    ts_key = invite.agent_config.get("tailscale_auth_key", "")
+    node_name = invite.node_name
+
+    # Strip the Tailscale key from the config written to disk — it's single-use
+    # and serves no purpose after Tailscale is connected.
+    config_for_disk = {
+        k: v for k, v in invite.agent_config.items()
+        if k != "tailscale_auth_key"
+    }
+    config_json = json.dumps(config_for_disk, indent=2)
+
+    script = (
+        _INSTALL_SCRIPT
+        .replace("__TS_KEY__", ts_key)
+        .replace("__NODE_NAME__", node_name)
+        .replace("__CONFIG_JSON__", config_json)
+    )
+    return PlainTextResponse(content=script, media_type="text/x-shellscript")
+
+
 @router.get("/join/{token}")
 async def redeem_invite(token: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(InviteToken).where(InviteToken.token == token))
     invite = result.scalar_one_or_none()
 
     if not invite:
-        raise HTTPException(status_code=404, detail="Invite not found")
-    if invite.used_at:
-        raise HTTPException(status_code=410, detail="Invite already used")
+        raise HTTPException(status_code=404, detail="Invite not found.")
     if invite.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
-        raise HTTPException(status_code=410, detail="Invite expired")
+        raise HTTPException(status_code=410, detail="Invite expired.")
 
-    invite.used_at = datetime.now(timezone.utc)
-    await db.commit()
-
-    # TODO: serve a setup page / install script instead of raw JSON
+    config_for_display = {
+        k: v for k, v in invite.agent_config.items()
+        if k != "tailscale_auth_key"
+    }
     return {
         "node_name": invite.node_name,
-        "agent_config": invite.agent_config,
-        "message": "Setup page coming soon — for now, save agent_config as agent.json",
+        "agent_config": config_for_display,
     }

@@ -7,6 +7,7 @@ const CONTROLLER_URL = process.env.NEXT_PUBLIC_CONTROLLER_URL ?? "http://localho
 
 export default function InviteModal({ onClose }: { onClose: () => void }) {
   const [nodeName, setNodeName] = useState("");
+  const [password, setPassword] = useState("");
   const [result, setResult] = useState<InviteResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -14,17 +15,23 @@ export default function InviteModal({ onClose }: { onClose: () => void }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!nodeName.trim()) return;
+    if (!nodeName.trim() || !password) return;
     setLoading(true);
     setError(null);
     try {
       const invite = await createInvite({
         node_name: nodeName.trim().toLowerCase().replace(/\s+/g, "-"),
         controller_url: CONTROLLER_URL,
+        admin_password: password,
       });
       setResult(invite);
-    } catch {
-      setError("Couldn't create invite — is the controller running?");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      setError(
+        msg.includes("401")
+          ? "Wrong admin password."
+          : "Couldn't create invite — is the controller running?"
+      );
     } finally {
       setLoading(false);
     }
@@ -69,11 +76,24 @@ export default function InviteModal({ onClose }: { onClose: () => void }) {
               </p>
             </div>
 
+            <div>
+              <label className="block text-sm text-slate-400 mb-1.5">
+                Admin password
+              </label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm"
+              />
+            </div>
+
             {error && <p className="text-red-400 text-sm">{error}</p>}
 
             <button
               type="submit"
-              disabled={loading || !nodeName.trim()}
+              disabled={loading || !nodeName.trim() || !password}
               className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium py-2 rounded-lg transition-colors text-sm"
             >
               {loading ? "Generating…" : "Generate Invite Link"}
@@ -82,7 +102,8 @@ export default function InviteModal({ onClose }: { onClose: () => void }) {
         ) : (
           <div className="flex flex-col gap-4">
             <p className="text-sm text-slate-300">
-              Send this link to <span className="text-white font-medium">{result.node_name}</span>.
+              Send this link to{" "}
+              <span className="text-white font-medium">{result.node_name}</span>.
               It expires in 7 days.
             </p>
             <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-indigo-300 text-sm font-mono break-all">
