@@ -73,7 +73,7 @@ export default function Dashboard() {
         {nodes.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {nodes.map((node) => (
-              <NodeCard key={node.name} node={node} />
+              <NodeCard key={node.name} node={node} onDelete={load} />
             ))}
           </div>
         )}

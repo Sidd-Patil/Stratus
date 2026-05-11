@@ -1,6 +1,7 @@
 "use client";
 
-import { Node } from "@/lib/api";
+import { useState } from "react";
+import { Node, deleteNode } from "@/lib/api";
 
 const STATE_LABELS: Record<string, { label: string; color: string }> = {
   running_full:     { label: "Full",     color: "bg-indigo-500/20 text-indigo-300" },
@@ -27,10 +28,27 @@ function timeAgo(iso: string): string {
   return `${Math.floor(secs / 3600)}h ago`;
 }
 
-export default function NodeCard({ node }: { node: Node }) {
+export default function NodeCard({ node, onDelete }: { node: Node; onDelete?: () => void }) {
   const online = node.status === "online";
   const state = STATE_LABELS[node.container_state] ?? STATE_LABELS.unknown;
   const ramGB = (node.ram_free_mb / 1024).toFixed(1);
+
+  const [confirming, setConfirming] = useState(false);
+  const [password, setPassword] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteNode(node.name, password);
+      onDelete?.();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Failed to delete.");
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="rounded-xl bg-slate-800 border border-slate-700 p-5 flex flex-col gap-4">
@@ -79,8 +97,51 @@ export default function NodeCard({ node }: { node: Node }) {
             {node.tailscale_ip ?? "no tailscale ip"}
           </div>
         </div>
-        <span>{online ? timeAgo(node.last_seen) : "offline"}</span>
+        <div className="flex items-center gap-2">
+          <span>{online ? timeAgo(node.last_seen) : "offline"}</span>
+          {!confirming && (
+            <button
+              onClick={() => setConfirming(true)}
+              className="text-slate-600 hover:text-red-400 transition-colors"
+              title="Remove node"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Delete confirmation */}
+      {confirming && (
+        <div className="border-t border-slate-700 pt-3 flex flex-col gap-2">
+          <p className="text-xs text-slate-400">Enter admin password to remove <span className="text-white">{node.name}</span>:</p>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleDelete()}
+            placeholder="Admin password"
+            className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500"
+            autoFocus
+          />
+          {deleteError && <p className="text-xs text-red-400">{deleteError}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={handleDelete}
+              disabled={deleting || !password}
+              className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors"
+            >
+              {deleting ? "Removing…" : "Remove"}
+            </button>
+            <button
+              onClick={() => { setConfirming(false); setPassword(""); setDeleteError(null); }}
+              className="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -37,9 +37,13 @@ export default function InviteModal({ onClose }: { onClose: () => void }) {
     }
   }
 
+  function joinUrl() {
+    if (!result) return "";
+    return `${window.location.origin}/join/${result.token}`;
+  }
+
   function handleCopy() {
-    if (!result) return;
-    navigator.clipboard.writeText(result.join_url);
+    navigator.clipboard.writeText(joinUrl());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -107,7 +111,7 @@ export default function InviteModal({ onClose }: { onClose: () => void }) {
               It expires in 7 days.
             </p>
             <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-indigo-300 text-sm font-mono break-all">
-              {result.join_url}
+              {joinUrl()}
             </div>
             <div className="flex gap-2">
               <button

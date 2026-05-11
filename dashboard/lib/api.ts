@@ -52,6 +52,17 @@ export async function createInvite(body: InviteRequest): Promise<InviteResponse>
   return res.json();
 }
 
+export async function deleteNode(name: string, adminPassword: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/v1/nodes/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ admin_password: adminPassword }),
+  });
+  if (res.status === 401) throw new Error("Wrong admin password.");
+  if (res.status === 404) throw new Error("Node not found.");
+  if (!res.ok) throw new Error("Failed to delete node.");
+}
+
 export async function fetchJoinData(token: string): Promise<JoinData> {
   const res = await fetch(`${BASE}/join/${token}`);
   if (res.status === 404) throw new Error("Invite not found");
