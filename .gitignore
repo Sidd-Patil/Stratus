@@ -4,7 +4,11 @@ agent.exe
 
 stratus
 stratus.exe
+stratus-pi
 agent.json
 .DS_Store
 
 .venv
+
+agent-pi.json
+dashboard/.env.local
