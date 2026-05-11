@@ -120,6 +120,14 @@ export default function InviteModal({ onClose }: { onClose: () => void }) {
               >
                 {copied ? "Copied!" : "Copy Link"}
               </button>
+              <a
+                href={joinUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 rounded-lg transition-colors text-sm text-center"
+              >
+                Open
+              </a>
               <button
                 onClick={onClose}
                 className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 rounded-lg transition-colors text-sm"
