@@ -5,6 +5,7 @@ import { createInvite, InviteResponse, INTERNAL_BASE } from "@/lib/api";
 
 export default function InviteModal({ onClose }: { onClose: () => void }) {
   const [nodeName, setNodeName] = useState("");
+  const [ownerIdentity, setOwnerIdentity] = useState("");
   const [password, setPassword] = useState("");
   const [result, setResult] = useState<InviteResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -21,6 +22,7 @@ export default function InviteModal({ onClose }: { onClose: () => void }) {
         node_name: nodeName.trim().toLowerCase().replace(/\s+/g, "-"),
         controller_url: INTERNAL_BASE,
         admin_password: password,
+        owner_ts_identity: ownerIdentity.trim() || undefined,
       });
       setResult(invite);
     } catch (err) {
@@ -75,6 +77,22 @@ export default function InviteModal({ onClose }: { onClose: () => void }) {
               />
               <p className="text-xs text-slate-500 mt-1">
                 Lowercase, no spaces — this is how it appears in the dashboard.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-400 mb-1.5">
+                Owner Tailscale login
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. friend@gmail.com"
+                value={ownerIdentity}
+                onChange={(e) => setOwnerIdentity(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Their login email from the Tailscale admin console. Leave blank to set later.
               </p>
             </div>
 

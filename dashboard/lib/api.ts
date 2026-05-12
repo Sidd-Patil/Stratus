@@ -4,8 +4,14 @@ export const PUBLIC_BASE = process.env.NEXT_PUBLIC_CONTROLLER_URL ?? "http://loc
 // Users' browsers reach this directly because they're on the tailnet.
 export const INTERNAL_BASE = process.env.NEXT_PUBLIC_INTERNAL_CONTROLLER_URL ?? "http://localhost:8081";
 
+export interface CallerInfo {
+  role: "admin" | "user";
+  identity: string;
+}
+
 export interface Node {
   name: string;
+  owner: string | null;
   os: string;
   tailscale_ip: string | null;
   cpu_free_pct: number;
@@ -96,6 +102,16 @@ export async function deleteNode(name: string, adminPassword: string): Promise<v
   if (res.status === 401) throw new Error("Wrong admin password.");
   if (res.status === 404) throw new Error("Node not found.");
   if (!res.ok) throw new Error("Failed to delete node.");
+}
+
+export async function fetchMe(): Promise<CallerInfo> {
+  const res = await fetch(`${INTERNAL_BASE}/api/v1/me`, {
+    headers: authHeaders(),
+    cache: "no-store",
+  });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error("Failed to identify caller");
+  return res.json();
 }
 
 export async function fetchJoinData(token: string): Promise<JoinData> {

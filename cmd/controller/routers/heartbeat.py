@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database import get_db
-from models import Node
+from models import Node, InviteToken
 from schemas import HeartbeatPayload
 from auth import verify_agent_secret
 
@@ -27,8 +27,17 @@ async def receive_heartbeat(
     node = result.scalar_one_or_none()
 
     if node is None:
+        # Look up the most recent used invite for this node to get the owner.
+        invite_result = await db.execute(
+            select(InviteToken)
+            .where(InviteToken.node_name == payload.node, InviteToken.used_at.is_not(None))
+            .order_by(InviteToken.used_at.desc())
+            .limit(1)
+        )
+        invite = invite_result.scalar_one_or_none()
         node = Node(
             name=payload.node,
+            owner=invite.owner_ts_identity if invite else None,
             os=payload.os,
             tailscale_ip=tailscale_ip,
             cpu_free_pct=payload.cpu_free_pct,

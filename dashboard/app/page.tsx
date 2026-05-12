@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { fetchNodes, logout, Node } from "@/lib/api";
+import { fetchNodes, fetchMe, logout, Node, CallerInfo } from "@/lib/api";
 import NodeCard from "@/components/NodeCard";
 import InviteModal from "@/components/InviteModal";
 
@@ -10,12 +10,13 @@ const REFRESH_INTERVAL = 15_000;
 
 export default function Dashboard() {
   const router = useRouter();
+  const [caller, setCaller] = useState<CallerInfo | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInvite, setShowInvite] = useState(false);
 
-  async function load() {
+  async function loadNodes() {
     try {
       const data = await fetchNodes();
       setNodes(data);
@@ -32,15 +33,27 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    if (!localStorage.getItem("dashboard_token")) {
-      router.push("/login");
-      return;
-    }
-    load();
-    const id = setInterval(load, REFRESH_INTERVAL);
-    return () => clearInterval(id);
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    fetchMe()
+      .then(info => {
+        setCaller(info);
+        loadNodes();
+        intervalId = setInterval(loadNodes, REFRESH_INTERVAL);
+      })
+      .catch(e => {
+        if (e instanceof Error && e.message === "UNAUTHORIZED") {
+          router.push("/login");
+          return;
+        }
+        setError("Cannot reach controller — are you on the Tailscale network?");
+        setLoading(false);
+      });
+
+    return () => { if (intervalId) clearInterval(intervalId); };
   }, []);
 
+  const isAdmin = caller?.role === "admin";
   const online = nodes.filter((n) => n.status === "online").length;
 
   return (
@@ -55,18 +68,25 @@ export default function Dashboard() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowInvite(true)}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-          >
-            + Invite a Friend
-          </button>
-          <button
-            onClick={() => { logout(); router.push("/login"); }}
-            className="text-slate-400 hover:text-white text-sm px-3 py-2 rounded-lg transition-colors"
-          >
-            Sign out
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowInvite(true)}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            >
+              + Invite a Friend
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => { logout(); router.push("/login"); }}
+              className="text-slate-400 hover:text-white text-sm px-3 py-2 rounded-lg transition-colors"
+            >
+              Sign out
+            </button>
+          )}
+          {!isAdmin && caller && (
+            <span className="text-xs text-slate-500">{caller.identity}</span>
+          )}
         </div>
       </header>
 
@@ -84,14 +104,18 @@ export default function Dashboard() {
         {!loading && !error && nodes.length === 0 && (
           <div className="text-center py-24 text-slate-500">
             <p className="text-lg">No nodes yet.</p>
-            <p className="text-sm mt-1">Start the agent on a machine, or invite a friend.</p>
+            <p className="text-sm mt-1">
+              {isAdmin
+                ? "Start the agent on a machine, or invite a friend."
+                : "Your machines will appear here once the agent is running."}
+            </p>
           </div>
         )}
 
         {nodes.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {nodes.map((node) => (
-              <NodeCard key={node.name} node={node} onDelete={load} />
+              <NodeCard key={node.name} node={node} onDelete={loadNodes} isAdmin={isAdmin} />
             ))}
           </div>
         )}

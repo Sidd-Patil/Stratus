@@ -202,6 +202,7 @@ async def create_invite(
     invite = InviteToken(
         token=token,
         node_name=body.node_name,
+        owner_ts_identity=body.owner_ts_identity,
         agent_config=agent_config,
         expires_at=expires_at,
     )

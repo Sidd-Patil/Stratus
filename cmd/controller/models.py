@@ -13,6 +13,7 @@ class Node(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    owner: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # Tailscale LoginName
     os: Mapped[str] = mapped_column(String, nullable=False)
     tailscale_ip: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     cpu_free_pct: Mapped[float] = mapped_column(Float, default=0.0)
@@ -37,6 +38,7 @@ class InviteToken(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     token: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     node_name: Mapped[str] = mapped_column(String, nullable=False)
+    owner_ts_identity: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Pre-filled agent.json delivered when the invite link is opened
     agent_config: Mapped[dict] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

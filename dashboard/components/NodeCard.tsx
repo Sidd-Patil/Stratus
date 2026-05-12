@@ -28,7 +28,7 @@ function timeAgo(iso: string): string {
   return `${Math.floor(secs / 3600)}h ago`;
 }
 
-export default function NodeCard({ node, onDelete }: { node: Node; onDelete?: () => void }) {
+export default function NodeCard({ node, onDelete, isAdmin }: { node: Node; onDelete?: () => void; isAdmin?: boolean }) {
   const online = node.status === "online";
   const state = STATE_LABELS[node.container_state] ?? STATE_LABELS.unknown;
   const ramGB = (node.ram_free_mb / 1024).toFixed(1);
@@ -99,7 +99,7 @@ export default function NodeCard({ node, onDelete }: { node: Node; onDelete?: ()
         </div>
         <div className="flex items-center gap-2">
           <span>{online ? timeAgo(node.last_seen) : "offline"}</span>
-          {!confirming && (
+          {isAdmin && !confirming && (
             <button
               onClick={() => setConfirming(true)}
               className="text-slate-600 hover:text-red-400 transition-colors"

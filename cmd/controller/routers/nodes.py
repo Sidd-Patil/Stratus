@@ -1,19 +1,13 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from database import get_db
 from models import Node, Event
-from schemas import NodeResponse
-from auth import verify_dashboard_token, verify_admin_password
+from schemas import NodeResponse, CallerResponse
+from auth import get_caller, CallerInfo, verify_admin_password
 from datetime import datetime, timezone, timedelta
 from typing import List
-
-
-def _require_dashboard_token(authorization: str = Header(default="")):
-    token = authorization.removeprefix("Bearer ").strip()
-    if not token or not verify_dashboard_token(token):
-        raise HTTPException(status_code=401, detail="Unauthorized.")
 
 router = APIRouter()
 
@@ -24,6 +18,7 @@ def _node_to_response(node: Node) -> NodeResponse:
     age = datetime.now(timezone.utc) - node.last_seen.replace(tzinfo=timezone.utc)
     return NodeResponse(
         name=node.name,
+        owner=node.owner,
         os=node.os,
         tailscale_ip=node.tailscale_ip,
         cpu_free_pct=node.cpu_free_pct,
@@ -35,9 +30,24 @@ def _node_to_response(node: Node) -> NodeResponse:
     )
 
 
-@router.get("/api/v1/nodes", response_model=List[NodeResponse], dependencies=[Depends(_require_dashboard_token)])
-async def list_nodes(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Node).order_by(Node.name))
+@router.get("/api/v1/me", response_model=CallerResponse)
+async def me(caller: CallerInfo = Depends(get_caller)):
+    return CallerResponse(role=caller["role"], identity=caller["identity"])
+
+
+@router.get("/api/v1/nodes", response_model=List[NodeResponse])
+async def list_nodes(
+    caller: CallerInfo = Depends(get_caller),
+    db: AsyncSession = Depends(get_db),
+):
+    if caller["role"] == "admin":
+        result = await db.execute(select(Node).order_by(Node.name))
+    else:
+        result = await db.execute(
+            select(Node)
+            .where(Node.owner == caller["identity"])
+            .order_by(Node.name)
+        )
     return [_node_to_response(n) for n in result.scalars().all()]
 
 

@@ -32,6 +32,7 @@ class EventPayload(BaseModel):
 
 class NodeResponse(BaseModel):
     name:            str
+    owner:           Optional[str]
     os:              str
     tailscale_ip:    Optional[str]
     cpu_free_pct:    float
@@ -59,11 +60,17 @@ class InviteCreateRequest(BaseModel):
     node_name:            NodeName
     controller_url:       ShortStr
     admin_password:       str       # validated server-side, not length-constrained
+    owner_ts_identity:    Optional[str] = None   # Tailscale LoginName of the machine owner
     idle_threshold_s:     float = 120
     cpu_idle_threshold_pct: float = 15.0
     cpu_cap_active:       float = 0.5
     cpu_cap_idle:         float = 2.0
     heartbeat_secs:       int   = 15
+
+
+class CallerResponse(BaseModel):
+    role:     str   # "admin" | "user"
+    identity: str   # "admin" | Tailscale LoginName
 
 
 class InviteResponse(BaseModel):
