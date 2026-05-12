@@ -1,7 +1,5 @@
-import { fetchJoinData } from "@/lib/api";
+import { fetchJoinData, PUBLIC_BASE } from "@/lib/api";
 import CopyButton from "@/components/CopyButton";
-
-const CONTROLLER_URL = process.env.NEXT_PUBLIC_CONTROLLER_URL ?? "http://localhost:8080";
 
 interface Props {
   params: Promise<{ token: string }>;
@@ -34,7 +32,7 @@ export default async function JoinPage({ params }: Props) {
     );
   }
 
-  const scriptUrl = `${CONTROLLER_URL}/join/${token}/script`;
+  const scriptUrl = `${PUBLIC_BASE}/join/${token}/script`;
   const curlCommand = `curl -fsSL ${scriptUrl} | bash`;
   const configJson = JSON.stringify(data!.agent_config, null, 2);
 

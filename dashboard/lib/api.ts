@@ -1,4 +1,8 @@
-const BASE = process.env.NEXT_PUBLIC_CONTROLLER_URL ?? "http://localhost:8080";
+// Public surface (Render) — invite creation, login, join page script delivery.
+export const PUBLIC_BASE = process.env.NEXT_PUBLIC_CONTROLLER_URL ?? "http://localhost:8080";
+// Internal surface (Tailscale VM) — nodes, events, heartbeat, future job API.
+// Users' browsers reach this directly because they're on the tailnet.
+export const INTERNAL_BASE = process.env.NEXT_PUBLIC_INTERNAL_CONTROLLER_URL ?? "http://localhost:8081";
 
 export interface Node {
   name: string;
@@ -47,7 +51,7 @@ function authHeaders(): Record<string, string> {
 }
 
 export async function login(password: string): Promise<string> {
-  const res = await fetch(`${BASE}/api/v1/auth/login`, {
+  const res = await fetch(`${PUBLIC_BASE}/api/v1/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
@@ -64,7 +68,7 @@ export function logout(): void {
 }
 
 export async function fetchNodes(): Promise<Node[]> {
-  const res = await fetch(`${BASE}/api/v1/nodes`, {
+  const res = await fetch(`${INTERNAL_BASE}/api/v1/nodes`, {
     headers: authHeaders(),
     cache: "no-store",
   });
@@ -74,7 +78,7 @@ export async function fetchNodes(): Promise<Node[]> {
 }
 
 export async function createInvite(body: InviteRequest): Promise<InviteResponse> {
-  const res = await fetch(`${BASE}/api/v1/invites`, {
+  const res = await fetch(`${PUBLIC_BASE}/api/v1/invites`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
@@ -84,7 +88,7 @@ export async function createInvite(body: InviteRequest): Promise<InviteResponse>
 }
 
 export async function deleteNode(name: string, adminPassword: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/v1/nodes/${encodeURIComponent(name)}`, {
+  const res = await fetch(`${INTERNAL_BASE}/api/v1/nodes/${encodeURIComponent(name)}`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ admin_password: adminPassword }),
@@ -95,7 +99,7 @@ export async function deleteNode(name: string, adminPassword: string): Promise<v
 }
 
 export async function fetchJoinData(token: string): Promise<JoinData> {
-  const res = await fetch(`${BASE}/join/${token}`);
+  const res = await fetch(`${PUBLIC_BASE}/join/${token}`);
   if (res.status === 404) throw new Error("Invite not found");
   if (res.status === 410) throw new Error("Invite expired or already used");
   if (!res.ok) throw new Error("Failed to load invite");

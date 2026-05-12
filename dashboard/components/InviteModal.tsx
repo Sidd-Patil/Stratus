@@ -1,9 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createInvite, InviteResponse } from "@/lib/api";
-
-const CONTROLLER_URL = process.env.NEXT_PUBLIC_CONTROLLER_URL ?? "http://localhost:8080";
+import { createInvite, InviteResponse, INTERNAL_BASE } from "@/lib/api";
 
 export default function InviteModal({ onClose }: { onClose: () => void }) {
   const [nodeName, setNodeName] = useState("");
@@ -21,7 +19,7 @@ export default function InviteModal({ onClose }: { onClose: () => void }) {
     try {
       const invite = await createInvite({
         node_name: nodeName.trim().toLowerCase().replace(/\s+/g, "-"),
-        controller_url: CONTROLLER_URL,
+        controller_url: INTERNAL_BASE,
         admin_password: password,
       });
       setResult(invite);
