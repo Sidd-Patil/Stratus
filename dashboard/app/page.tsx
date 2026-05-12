@@ -25,13 +25,17 @@ export default function Dashboard() {
         router.push("/login");
         return;
       }
-      setError("Cannot reach controller — is it running?");
+      setError("Cannot reach controller — are you on the Tailscale network?");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
+    if (!localStorage.getItem("dashboard_token")) {
+      router.push("/login");
+      return;
+    }
     load();
     const id = setInterval(load, REFRESH_INTERVAL);
     return () => clearInterval(id);
